@@ -992,6 +992,10 @@ def Batch(video_dict,bin_dict,mt_cutoff,FreezeThresh,MinDuration,SIGMA=1,accept_
             (i.e. if start frame is 100, it will be relative to that). If no bins are to 
             be specified, set bin_dict = None.
             example = bin_dict = {1:(0,100), 2:(100,200)}
+
+            Alternatively, each value specifies such bin for a single video.
+            # individual bin keys should be same for all in such case.
+            example = bin_dict = { 'video_a': {1:(0,100), 2:(100,200), 3:(200,300)}, 'video_b': {1:(0,100), 2:(100, 200), 3:(200, 300)} }
         
         mt_cutoff:: [float]
             Threshold value for determining magnitude of change sufficient to mark
@@ -1030,6 +1034,34 @@ def Batch(video_dict,bin_dict,mt_cutoff,FreezeThresh,MinDuration,SIGMA=1,accept_
     Notes:
     
     """
+    bin_dict_per_video = None
+    if bin_dict is not None:
+        bin_keys = None
+        is_tuple = None
+        for k, v in bin_dict.items():
+            if isinstance(v, tuple):
+                assert is_tuple != False, "bin_dicts must be dict of tuples or dict of dict of tuples, not hybrid"
+                assert len(v) == 2
+                is_tuple = True
+            elif isinstance(v, dict):
+                assert is_tuple!= True, "bin_dicts must be dict of tuples or dict of dict of tuples, not hybrid"
+                is_tuple = False
+                if bin_keys is None:
+                    bin_keys = set(list(v.keys()))
+                assert bin_keys == set(list(v.keys())), "Each video must have the same bin_dict keys, but are not, {} != {} ({})".format(bin_keys,v.keys(),k)
+                for k2, v2 in v.items():
+                    assert isinstance(v2, tuple)
+                    assert len(v2) == 2
+            else:
+                raise ValueError('bin_dict must be dict of tuples or dict of dict of tuples, but is neither because key {k} = {v}'.format(k=k,v=v))
+        if is_tuple == False:
+            # is a dict of dicts of tuples.
+            bin_dict_per_video = bin_dict
+            bin_dict = None
+
+            for video_dict['file'] in video_dict['FileNames']:
+                p_id = os.path.splitext( os.path.basename(video_dict['file']) )[0] # remove extension ant use filename as p_id
+                assert p_id in bin_dict_per_video.keys(),'No bins/bin_dict specified for participant id {p} (from file {f})'.format(p=p_id, f=video_dict['file'])
 
     #Loop through files    
     for video_dict['file'] in video_dict['FileNames']:
@@ -1054,6 +1086,12 @@ def Batch(video_dict,bin_dict,mt_cutoff,FreezeThresh,MinDuration,SIGMA=1,accept_
         Motion = Measure_Motion(video_dict,mt_cutoff,SIGMA=1)  
         Freezing = Measure_Freezing(Motion,FreezeThresh,MinDuration)  
         SaveData(video_dict,Motion,Freezing,mt_cutoff,FreezeThresh,MinDuration)
+
+        if bin_dict_per_video is not None:
+            p_id = os.path.splitext( os.path.basename(video_dict['fpath']) )[0] # remove extension ant use filename as p_id
+            bin_dict = bin_dict_per_video.get(p_id,None)
+            assert bin_dict is not None, 'No bins/bin_dict specified for participant id {p} (from file {f})'.format(p=p_id, f=video_dict['file'])
+            
         summary = Summarize(video_dict,Motion,Freezing,FreezeThresh,
                             MinDuration,mt_cutoff,bin_dict=bin_dict)
 
@@ -1403,3 +1441,46 @@ def check_p_frames(cap, p_prop_allowed=.01, frames_checked=300):
         
 #         return image*track*points*line*text,pointDraw_stream,video_dict   
 
+
+
+# reads bins from a csv file of following format:
+# bins, start_frame, end_frame
+# <p_id>, <number>, <number>
+# Cue <p_id> <cue_no>, <number>, <number>
+# ...
+def Read_BinsFromCSV(filepath, nof_bins_per_participant):
+    with open(filepath, 'r') as csvfile:
+        lines = csvfile.readlines()
+    table = [[c.strip() for c in l.split(',')] for l in lines]
+    assert table[0] == ['bins', 'start_frame', 'end_frame']
+    table = table[1:]
+    res = {}
+    for row in table:
+        start_frame = int(row[1])
+        assert str(start_frame) == row[1]
+        end_frame = int(row[2])
+        assert str(end_frame) == row[2]
+        
+        name = row[0].split()
+        participant, cue_key = None, None
+        if len(name) == 1:
+            participant = name[0]
+            cue_key = 'init'
+        else:
+            assert len(name) == 3, "invalid name, '{}' it should contain 3 space separated chunks ie 'Cue xx 1'".format(row[0])
+            assert name[0] == 'Cue'
+            participant = name[1]
+            cue_no = int(name[2])
+            assert str(cue_no) == name[2]
+            cue_key = 'cue' + str(cue_no)
+
+        res[participant] = res.get(participant, {})
+        res[participant][cue_key] = (start_frame, end_frame)
+
+    bin_keys = set(list(res[participant].keys()))
+    
+    for key, values in res.items():
+        assert len(values) == nof_bins_per_participant
+        assert set(list(values.keys())) == bin_keys
+
+    return res

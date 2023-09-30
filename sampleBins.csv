@@ -1,0 +1,12 @@
+bins, start_frame, end_frame
+Freezing_animal,60,510
+Cue Freezing_animal 1,512,562
+Cue Freezing_animal 2,842,892
+Cue Freezing_animal 3,1169,1219
+Cue Freezing_animal 4,1456,1506
+Cue Freezing_animal 5,1759,1808
+Cue Freezing_animal 6,2076,2125
+Cue Freezing_animal 7,2363,2412
+Cue Freezing_animal 8,2705,2754
+Cue Freezing_animal 9,2982,3032
+Cue Freezing_animal 10,3294,3344
